@@ -85,16 +85,32 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def get_model():
+def get_response(user_input, history):
     api_key = st.secrets.get("GEMINI_API_KEY", "")
     if not api_key:
         st.error("GEMINI_API_KEY not found in Streamlit secrets.")
         st.stop()
+
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel(
-        model_name="gemini-1.5-flash-8b",
-        system_instruction=SYSTEM_PROMPT,
-    )
+
+    # Build the full prompt: system + last 4 exchanges + new question
+    recent = history[-8:]
+    conversation = ""
+    for msg in recent:
+        role = "Student" if msg["role"] == "user" else "Assistant"
+        conversation += f"{role}: {msg['content']}\n\n"
+
+    full_prompt = f"{SYSTEM_PROMPT}\n\n--- CONVERSATION SO FAR ---\n{conversation}Student: {user_input}\n\nAssistant:"
+
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+    try:
+        response = model.generate_content(full_prompt)
+        return response.text
+    except Exception as e:
+        err = str(e).lower()
+        if "quota" in err or "exhausted" in err or "rate" in err:
+            return "⚠️ The free API rate limit was reached. Please wait 60 seconds and try again."
+        return f"⚠️ An error occurred: {str(e)}"
 
 
 def render_message(role, content):
@@ -112,44 +128,13 @@ def render_message(role, content):
         </div>""", unsafe_allow_html=True)
 
 
-def stream_response(model, history, user_input):
-    # Keep only last 6 messages to stay within free tier limits
-    recent = history[:-1][-6:]
-    gemini_history = [
-        {"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]}
-        for m in recent
-    ]
-
-    chat = model.start_chat(history=gemini_history)
-    full_text = ""
-    placeholder = st.empty()
-
-    try:
-        for chunk in chat.send_message(user_input, stream=True):
-            if chunk.text:
-                full_text += chunk.text
-                placeholder.markdown(f"""
-                <div class="chat-message">
-                    <div class="avatar bot-avatar">🎓</div>
-                    <div class="bubble bot-bubble">{full_text}▌</div>
-                </div>""", unsafe_allow_html=True)
-    except Exception:
-        full_text = "⚠️ Free API rate limit reached. Please wait 60 seconds and try again."
-
-    placeholder.markdown(f"""
-    <div class="chat-message">
-        <div class="avatar bot-avatar">🎓</div>
-        <div class="bubble bot-bubble">{full_text}</div>
-    </div>""", unsafe_allow_html=True)
-
-    return full_text
-
-
 # Session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "quick_question" not in st.session_state:
     st.session_state.quick_question = None
+if "pending_response" not in st.session_state:
+    st.session_state.pending_response = False
 
 # Sidebar
 with st.sidebar:
@@ -182,6 +167,7 @@ with st.sidebar:
     for q in quick_qs:
         if st.button(q, key=f"btn_{q}"):
             st.session_state.quick_question = q
+            st.session_state.pending_response = True
 
     st.divider()
     if st.button("🗑️ Clear Chat", use_container_width=True):
@@ -205,21 +191,27 @@ if not st.session_state.messages:
     </div>
     """, unsafe_allow_html=True)
 
+# Render existing messages
 for msg in st.session_state.messages:
     render_message(msg["role"], msg["content"])
 
-if st.session_state.quick_question:
+# Handle quick question from sidebar
+if st.session_state.quick_question and st.session_state.pending_response:
     user_input = st.session_state.quick_question
     st.session_state.quick_question = None
+    st.session_state.pending_response = False
     st.session_state.messages.append({"role": "user", "content": user_input})
     render_message("user", user_input)
-    model = get_model()
-    response = stream_response(model, st.session_state.messages, user_input)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    with st.spinner("Thinking..."):
+        reply = get_response(user_input, st.session_state.messages[:-1])
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+    render_message("assistant", reply)
 
+# Handle typed input
 if user_input := st.chat_input("Ask about IE 300 / IE 400 Summer Practice..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     render_message("user", user_input)
-    model = get_model()
-    response = stream_response(model, st.session_state.messages, user_input)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    with st.spinner("Thinking..."):
+        reply = get_response(user_input, st.session_state.messages[:-1])
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+    render_message("assistant", reply)
