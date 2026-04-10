@@ -1,5 +1,5 @@
 import streamlit as st
-import google.generativeai as genai
+from openai import OpenAI
 from knowledge_base import SYSTEM_PROMPT
 
 st.set_page_config(
@@ -86,31 +86,32 @@ st.markdown("""
 
 
 def get_response(user_input, history):
-    api_key = st.secrets.get("GEMINI_API_KEY", "")
+    api_key = st.secrets.get("GROQ_API_KEY", "")
     if not api_key:
-        st.error("GEMINI_API_KEY not found in Streamlit secrets.")
+        st.error("GROQ_API_KEY not found in Streamlit secrets.")
         st.stop()
 
-    genai.configure(api_key=api_key)
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.groq.com/openai/v1"
+    )
 
-    # Build the full prompt: system + last 4 exchanges + new question
-    recent = history[-8:]
-    conversation = ""
-    for msg in recent:
-        role = "Student" if msg["role"] == "user" else "Assistant"
-        conversation += f"{role}: {msg['content']}\n\n"
+    # Build messages: system + last 6 exchanges + new message
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for msg in history[-6:]:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": user_input})
 
-    full_prompt = f"{SYSTEM_PROMPT}\n\n--- CONVERSATION SO FAR ---\n{conversation}Student: {user_input}\n\nAssistant:"
-
-    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     try:
-        response = model.generate_content(full_prompt)
-        return response.text
+        response = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=messages,
+            max_tokens=1024,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content
     except Exception as e:
-        err = str(e).lower()
-        if "quota" in err or "exhausted" in err or "rate" in err:
-            return "⚠️ The free API rate limit was reached. Please wait 60 seconds and try again."
-        return f"⚠️ An error occurred: {str(e)}"
+        return f"⚠️ Error: {str(e)}"
 
 
 def render_message(role, content):
@@ -191,11 +192,9 @@ if not st.session_state.messages:
     </div>
     """, unsafe_allow_html=True)
 
-# Render existing messages
 for msg in st.session_state.messages:
     render_message(msg["role"], msg["content"])
 
-# Handle quick question from sidebar
 if st.session_state.quick_question and st.session_state.pending_response:
     user_input = st.session_state.quick_question
     st.session_state.quick_question = None
@@ -207,7 +206,6 @@ if st.session_state.quick_question and st.session_state.pending_response:
     st.session_state.messages.append({"role": "assistant", "content": reply})
     render_message("assistant", reply)
 
-# Handle typed input
 if user_input := st.chat_input("Ask about IE 300 / IE 400 Summer Practice..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     render_message("user", user_input)
