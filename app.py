@@ -2,7 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 from knowledge_base import SYSTEM_PROMPT
 
-# ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="METU IE Summer Practice Assistant",
     page_icon="🎓",
@@ -10,13 +9,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Main background */
     .stApp { background-color: #f5f7fa; }
-
-    /* Header card */
     .header-card {
         background: linear-gradient(135deg, #003366 0%, #0055a5 100%);
         border-radius: 16px;
@@ -28,8 +23,6 @@ st.markdown("""
     }
     .header-card h1 { font-size: 1.6rem; margin: 0 0 6px 0; font-weight: 700; }
     .header-card p  { font-size: 0.95rem; margin: 0; opacity: 0.88; }
-
-    /* Chat messages */
     .chat-message {
         display: flex;
         gap: 12px;
@@ -65,15 +58,8 @@ st.markdown("""
         border-bottom-left-radius: 4px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
-    .user-row  { flex-direction: row-reverse; }
-
-    /* Sidebar */
+    .user-row { flex-direction: row-reverse; }
     [data-testid="stSidebar"] { background-color: #f0f4f8; }
-
-    /* Input box */
-    .stChatInput > div { border-radius: 12px !important; }
-
-    /* Quick question buttons */
     .stButton > button {
         border-radius: 20px !important;
         font-size: 0.82rem !important;
@@ -81,14 +67,11 @@ st.markdown("""
         border: 1px solid #0055a5 !important;
         color: #0055a5 !important;
         background: transparent !important;
-        transition: all 0.2s;
     }
     .stButton > button:hover {
         background: #0055a5 !important;
         color: white !important;
     }
-
-    /* Info box */
     .info-box {
         background: #e8f0fe;
         border-left: 4px solid #0055a5;
@@ -101,21 +84,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def get_model():
     api_key = st.secrets.get("GEMINI_API_KEY", "")
     if not api_key:
-        st.error("⚠️ GEMINI_API_KEY not found in Streamlit secrets. Please add it.")
+        st.error("GEMINI_API_KEY not found in Streamlit secrets.")
         st.stop()
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name="gemini-1.5-flash-8b",
         system_instruction=SYSTEM_PROMPT,
     )
 
 
-def render_message(role: str, content: str):
+def render_message(role, content):
     if role == "user":
         st.markdown(f"""
         <div class="chat-message user-row">
@@ -130,26 +112,29 @@ def render_message(role: str, content: str):
         </div>""", unsafe_allow_html=True)
 
 
-def stream_response(model, history: list, user_input: str) -> str:
-    gemini_history = []
-    for msg in history[:-1]:
-        gemini_history.append({
-            "role": "user" if msg["role"] == "user" else "model",
-            "parts": [msg["content"]]
-        })
+def stream_response(model, history, user_input):
+    # Keep only last 6 messages to stay within free tier limits
+    recent = history[:-1][-6:]
+    gemini_history = [
+        {"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]}
+        for m in recent
+    ]
 
     chat = model.start_chat(history=gemini_history)
     full_text = ""
     placeholder = st.empty()
 
-    for chunk in chat.send_message(user_input, stream=True):
-        if chunk.text:
-            full_text += chunk.text
-            placeholder.markdown(f"""
-            <div class="chat-message">
-                <div class="avatar bot-avatar">🎓</div>
-                <div class="bubble bot-bubble">{full_text}▌</div>
-            </div>""", unsafe_allow_html=True)
+    try:
+        for chunk in chat.send_message(user_input, stream=True):
+            if chunk.text:
+                full_text += chunk.text
+                placeholder.markdown(f"""
+                <div class="chat-message">
+                    <div class="avatar bot-avatar">🎓</div>
+                    <div class="bubble bot-bubble">{full_text}▌</div>
+                </div>""", unsafe_allow_html=True)
+    except Exception:
+        full_text = "⚠️ Free API rate limit reached. Please wait 60 seconds and try again."
 
     placeholder.markdown(f"""
     <div class="chat-message">
@@ -160,14 +145,13 @@ def stream_response(model, history: list, user_input: str) -> str:
     return full_text
 
 
-# ── Session state ──────────────────────────────────────────────────────────────
+# Session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
 if "quick_question" not in st.session_state:
     st.session_state.quick_question = None
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
+# Sidebar
 with st.sidebar:
     st.markdown("### 📚 About")
     st.markdown("""
@@ -179,13 +163,11 @@ with st.sidebar:
     - Company opportunities
     - Deadlines & procedures
     """)
-
     st.divider()
     st.markdown("### 🔗 Official Links")
     st.markdown("- [SP Website](https://sp-ie.metu.edu.tr/en)")
     st.markdown("- [OCW System](https://ocw.metu.edu.tr)")
     st.markdown("- Email: ie-staj@metu.edu.tr")
-
     st.divider()
     st.markdown("### 💡 Quick Questions")
 
@@ -197,7 +179,6 @@ with st.sidebar:
         "Can IE 300 be done online?",
         "What documents do I need?",
     ]
-
     for q in quick_qs:
         if st.button(q, key=f"btn_{q}"):
             st.session_state.quick_question = q
@@ -207,7 +188,7 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# ── Main area ──────────────────────────────────────────────────────────────────
+# Main
 st.markdown("""
 <div class="header-card">
     <h1>🎓 METU IE Summer Practice Assistant</h1>
@@ -218,33 +199,27 @@ st.markdown("""
 if not st.session_state.messages:
     st.markdown("""
     <div class="info-box">
-        👋 <strong>Welcome!</strong> I can answer questions about METU IE Summer Practices 
-        (IE 300 & IE 400), including requirements, documents, insurance, deadlines, and 
+        👋 <strong>Welcome!</strong> I can answer questions about METU IE Summer Practices
+        (IE 300 & IE 400), including requirements, documents, insurance, deadlines, and
         company opportunities. Ask me anything or use the quick questions in the sidebar!
     </div>
     """, unsafe_allow_html=True)
 
-# Render existing conversation
 for msg in st.session_state.messages:
     render_message(msg["role"], msg["content"])
 
-# Handle quick question from sidebar
 if st.session_state.quick_question:
     user_input = st.session_state.quick_question
     st.session_state.quick_question = None
-
     st.session_state.messages.append({"role": "user", "content": user_input})
     render_message("user", user_input)
-
     model = get_model()
     response = stream_response(model, st.session_state.messages, user_input)
     st.session_state.messages.append({"role": "assistant", "content": response})
 
-# Chat input
 if user_input := st.chat_input("Ask about IE 300 / IE 400 Summer Practice..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     render_message("user", user_input)
-
     model = get_model()
     response = stream_response(model, st.session_state.messages, user_input)
     st.session_state.messages.append({"role": "assistant", "content": response})
