@@ -37,27 +37,31 @@ st.markdown("""
         flex-shrink: 0;
         margin-top: 2px;
     }
-    .user-avatar   { background: #0055a5; }
-    .bot-avatar    { background: #003366; }
+    .user-avatar { background: #0055a5; }
+    .bot-avatar  { background: #003366; }
     .chat-message .bubble {
-        max-width: 85%;
+        max-width: 80%;
         padding: 12px 16px;
         border-radius: 14px;
         line-height: 1.55;
         font-size: 0.95rem;
+        word-wrap: break-word;
     }
+    /* FIX: explicit dark text on light bg for bot, white text on dark bg for user */
     .user-bubble {
-        background: #0055a5;
-        color: white;
+        background-color: #0055a5 !important;
+        color: #ffffff !important;
         border-bottom-right-radius: 4px;
         margin-left: auto;
     }
     .bot-bubble {
-        background: white;
-        color: #1a1a2e;
+        background-color: #ffffff !important;
+        color: #1a1a2e !important;
         border-bottom-left-radius: 4px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
+    .user-bubble * { color: #ffffff !important; }
+    .bot-bubble  * { color: #1a1a2e !important; }
     .user-row { flex-direction: row-reverse; }
     [data-testid="stSidebar"] { background-color: #f0f4f8; }
     .stButton > button {
@@ -78,25 +82,55 @@ st.markdown("""
         border-radius: 8px;
         padding: 12px 16px;
         font-size: 0.88rem;
-        color: #003366;
+        color: #003366 !important;
         margin-bottom: 16px;
     }
 </style>
 """, unsafe_allow_html=True)
 
+OFF_TOPIC_REPLY = (
+    "I can only answer questions about METU IE 300 and IE 400 Summer Practices. "
+    "Please visit https://sp-ie.metu.edu.tr/en or email ie-staj@metu.edu.tr for other matters."
+)
+
+# Keywords that must appear for a question to be on-topic
+ON_TOPIC_KEYWORDS = [
+    "ie 300", "ie300", "ie 400", "ie400", "summer practice", "staj", "internship",
+    "sgk", "insurance", "sigorta", "prerequisite", "ön koşul", "onkosul",
+    "report", "rapor", "deadline", "son tarih", "document", "belge", "form",
+    "company", "şirket", "sirket", "application", "başvuru", "basvuru",
+    "register", "kayıt", "kayit", "turnitin", "ocw", "odtuclass",
+    "ie-staj", "sp-ie", "committee", "coordinator", "koordinator",
+    "satisfactory", "grade", "not", "workday", "iş günü", "protocol",
+    "sözleşme", "sozlesme", "performance", "başarı", "basari",
+    "paid", "ücretli", "ucretli", "voluntary", "gönüllü", "gonullu",
+    "manufacturing", "üretim", "uretim", "service", "hizmet",
+    "hybrid", "face-to-face", "online", "probation", "e-devlet",
+    "automotive", "electronics", "textile", "pharmaceutical",
+    "metu", "odtü", "odtu", "ie department", "endüstri", "endustri",
+    "noksel", "tei", "tusas", "koçtaş", "koctas", "eltaş", "eltas",
+    "how long", "ne kadar", "when", "ne zaman", "where", "nerede",
+    "who signs", "kim imzalar", "what documents", "hangi belgeler",
+    "can i", "yapabilir miyim", "is it allowed", "izin var mı",
+]
+
+def is_on_topic(text: str) -> bool:
+    t = text.lower()
+    return any(kw in t for kw in ON_TOPIC_KEYWORDS)
+
 
 def get_response(user_input, history):
+    # Hard client-side filter before even calling the API
+    if not is_on_topic(user_input):
+        return OFF_TOPIC_REPLY
+
     api_key = st.secrets.get("GROQ_API_KEY", "")
     if not api_key:
         st.error("GROQ_API_KEY not found in Streamlit secrets.")
         st.stop()
 
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://api.groq.com/openai/v1"
-    )
+    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 
-    # Build messages: system + last 6 exchanges + new message
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for msg in history[-6:]:
         messages.append({"role": msg["role"], "content": msg["content"]})
@@ -107,7 +141,7 @@ def get_response(user_input, history):
             model="llama-3.1-8b-instant",
             messages=messages,
             max_tokens=1024,
-            temperature=0.3,
+            temperature=0.2,
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -156,7 +190,6 @@ with st.sidebar:
     st.markdown("- Email: ie-staj@metu.edu.tr")
     st.divider()
     st.markdown("### 💡 Quick Questions")
-
     quick_qs = [
         "What are IE 300 prerequisites?",
         "How do I apply for SGK insurance?",
@@ -169,7 +202,6 @@ with st.sidebar:
         if st.button(q, key=f"btn_{q}"):
             st.session_state.quick_question = q
             st.session_state.pending_response = True
-
     st.divider()
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
