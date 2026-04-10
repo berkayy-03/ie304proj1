@@ -1,6 +1,5 @@
 import streamlit as st
-import anthropic
-import time
+import google.generativeai as genai
 from knowledge_base import SYSTEM_PROMPT
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -104,12 +103,16 @@ st.markdown("""
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def get_client() -> anthropic.Anthropic:
-    api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+def get_model():
+    api_key = st.secrets.get("GEMINI_API_KEY", "")
     if not api_key:
-        st.error("⚠️ ANTHROPIC_API_KEY not found in Streamlit secrets. Please add it.")
+        st.error("⚠️ GEMINI_API_KEY not found in Streamlit secrets. Please add it.")
         st.stop()
-    return anthropic.Anthropic(api_key=api_key)
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=SYSTEM_PROMPT,
+    )
 
 
 def render_message(role: str, content: str):
@@ -127,26 +130,27 @@ def render_message(role: str, content: str):
         </div>""", unsafe_allow_html=True)
 
 
-def stream_response(client: anthropic.Anthropic, messages: list) -> str:
-    """Stream a response from Claude and return the full text."""
+def stream_response(model, history: list, user_input: str) -> str:
+    gemini_history = []
+    for msg in history[:-1]:
+        gemini_history.append({
+            "role": "user" if msg["role"] == "user" else "model",
+            "parts": [msg["content"]]
+        })
+
+    chat = model.start_chat(history=gemini_history)
     full_text = ""
     placeholder = st.empty()
 
-    with client.messages.stream(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-    ) as stream:
-        for text_chunk in stream.text_stream:
-            full_text += text_chunk
+    for chunk in chat.send_message(user_input, stream=True):
+        if chunk.text:
+            full_text += chunk.text
             placeholder.markdown(f"""
             <div class="chat-message">
                 <div class="avatar bot-avatar">🎓</div>
                 <div class="bubble bot-bubble">{full_text}▌</div>
             </div>""", unsafe_allow_html=True)
 
-    # Final render without cursor
     placeholder.markdown(f"""
     <div class="chat-message">
         <div class="avatar bot-avatar">🎓</div>
@@ -232,9 +236,8 @@ if st.session_state.quick_question:
     st.session_state.messages.append({"role": "user", "content": user_input})
     render_message("user", user_input)
 
-    client = get_client()
-    api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
-    response = stream_response(client, api_messages)
+    model = get_model()
+    response = stream_response(model, st.session_state.messages, user_input)
     st.session_state.messages.append({"role": "assistant", "content": response})
 
 # Chat input
@@ -242,7 +245,6 @@ if user_input := st.chat_input("Ask about IE 300 / IE 400 Summer Practice..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     render_message("user", user_input)
 
-    client = get_client()
-    api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
-    response = stream_response(client, api_messages)
+    model = get_model()
+    response = stream_response(model, st.session_state.messages, user_input)
     st.session_state.messages.append({"role": "assistant", "content": response})
