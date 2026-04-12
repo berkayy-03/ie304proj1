@@ -1,0 +1,54 @@
+# **METU-IE Summer Practice Chatbot**
+
+An AI-powered assistant designed to help METU Industrial Engineering students navigate IE 300 and IE 400 summer internship procedures. The chatbot answers questions based on a manually curated knowledge base derived from official departmental guidelines.
+
+# **Tech Stack**
+
+* Language: Python  
+* LLM: Llama 3.1 8B Instant (via Groq API)  
+* Frontend: Streamlit  
+* API Client: OpenAI-compatible client pointed to Groq endpoint
+
+# **Installation & Setup & Local Run**
+
+## **1\. Install dependencies**
+
+pip install \-r requirements.txt
+
+## **2\. Configure API Key**
+
+GROQ\_API\_KEY \= "your\_groq\_api\_key\_here"
+
+## **3\. Run the Application**
+
+streamlit run app.py
+
+# **Deploying to Streamlit Community Cloud**
+
+1\. Push this repository to GitHub.
+
+2\. Go to https://share.streamlit.io and click New app.
+
+3\. Select your repo, branch (main), and set app.py as the main file.
+
+4\. Under Advanced settings → Secrets, add: GROQ\_API\_KEY \= "your\_groq\_api\_key\_here"
+
+5\. Click Deploy. Your app will be live at a public URL.
+
+# **Project Structure**
+
+app.py              
+
+knowledge\_base.py   
+
+requirements.txt    
+
+documentation.pdf  
+
+# **Features**
+
+* Full conversation history (last 6 messages)  
+* Sidebar quick-question shortcuts  
+* Bilingual support (English & Turkish)  
+* Out-of-scope query handling  
+* METU blue-themed UI
